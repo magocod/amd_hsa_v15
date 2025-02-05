@@ -1,8 +1,20 @@
-use crate::fmm_types::{DRM_FIRST_RENDER_NODE, DRM_LAST_RENDER_NODE};
+#![allow(
+    non_camel_case_types,
+    non_snake_case,
+    dead_code,
+    non_upper_case_globals,
+    clippy::enum_clike_unportable_variant,
+    clippy::mixed_case_hex_literals
+)]
+
+use crate::fmm_types::{
+    gpu_mem_t, manageable_aperture_t, svm_t, DRM_FIRST_RENDER_NODE, DRM_LAST_RENDER_NODE,
+};
 use crate::hsakmttypes::{node_props_t, HsaSystemProperties, HsaVersionInfo};
 use crate::topology_utils::SysDevicesVirtualKfd;
 use amdgpu_drm_sys::bindings::amdgpu_device;
 
+#[derive(Debug)]
 pub struct TopologyGlobals {
     pub g_system: HsaSystemProperties,
     pub g_props: Vec<node_props_t>,
@@ -32,27 +44,61 @@ impl TopologyGlobals {
     }
 }
 
-pub struct FmmGlobals {
+#[derive(Debug)]
+pub struct FmmGlobals<'a> {
     pub drm_render_fds: [i32; DRM_LAST_RENDER_NODE + 1 - DRM_FIRST_RENDER_NODE],
     pub amdgpu_handle: [amdgpu_device; DRM_LAST_RENDER_NODE + 1 - DRM_FIRST_RENDER_NODE],
+    pub svm: svm_t<'a>,
+    /* The other apertures are specific to each GPU. gpu_mem_t manages GPU
+     * specific memory apertures.
+     */
+    pub gpu_mem: Vec<gpu_mem_t<'a>>,
+    pub gpu_mem_count: u32,
+    // pub g_first_gpu_mem: gpu_mem_t<'a>,
+    /* GPU node array for default mappings */
+    pub all_gpu_id_array_size: u32,
+    pub all_gpu_id_array: Vec<u32>,
+    pub dgpu_shared_aperture_base: *mut std::os::raw::c_void,
+    pub dgpu_shared_aperture_limit: *mut std::os::raw::c_void,
+    /* On APU, for memory allocated on the system memory that GPU doesn't access
+     * via GPU driver, they are not managed by GPUVM. cpuvm_aperture keeps track
+     * of this part of memory.
+     */
+    pub cpuvm_aperture: manageable_aperture_t<'a>,
+    /* mem_handle_aperture is used to generate memory handles
+     * for allocations that don't have a valid virtual address
+     * its size is 47bits.
+     */
+    pub mem_handle_aperture: manageable_aperture_t<'a>,
 }
 
-impl FmmGlobals {
+impl FmmGlobals<'_> {
     pub fn new() -> Self {
         Self {
             drm_render_fds: [0; DRM_LAST_RENDER_NODE + 1 - DRM_FIRST_RENDER_NODE],
             amdgpu_handle: [amdgpu_device { _unused: [] };
                 DRM_LAST_RENDER_NODE + 1 - DRM_FIRST_RENDER_NODE],
+            svm: svm_t::default(),
+            gpu_mem: vec![],
+            gpu_mem_count: 0,
+            all_gpu_id_array_size: 0,
+            all_gpu_id_array: vec![],
+            dgpu_shared_aperture_base: std::ptr::null_mut(),
+            dgpu_shared_aperture_limit: std::ptr::null_mut(),
+            cpuvm_aperture: Default::default(),
+            mem_handle_aperture: Default::default(),
         }
     }
 }
 
+#[derive(Debug)]
 pub struct VersionGlobals {
     pub kfd: HsaVersionInfo,
 }
 
+#[derive(Debug)]
 pub struct HsakmtGlobals {
-    pub fmm: FmmGlobals,
+    pub fmm: FmmGlobals<'static>,
     pub topology: TopologyGlobals,
     pub version: VersionGlobals,
     // HSAKMT global data
@@ -90,5 +136,15 @@ impl HsakmtGlobals {
             hsakmt_is_svm_api_supported: false,
             hsakmt_zfb_support: 0,
         }
+    }
+
+    pub fn check_kfd_open_and_panic(&self) {
+        if self.hsakmt_kfd_open_count == 0 {
+            panic!("HSAKMT_STATUS_KERNEL_IO_CHANNEL_NOT_OPENED");
+        }
+    }
+
+    pub fn PAGE_SIZE(&self) -> i32 {
+        self.hsakmt_page_size
     }
 }
