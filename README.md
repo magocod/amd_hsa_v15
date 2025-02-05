@@ -28,7 +28,7 @@ ROCt Thunk Library (`libhsakmt`) rewrite from C to Rust
 
 ## hsa-rs (TODO)
 
-The HSA Runtime (`hsa-runtime`) rewrite from c++ to Rust
+The HSA Runtime (`hsa-runtime`) rewrite from C++ to Rust
 
 ## amdgpu-drm-sys
 
