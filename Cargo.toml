@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "amdgpu-drm-sys",
+    "hsakmt-rs",
+    "numa-sys",
+    "xf86drm-sys",
+]
+
+#[profile.dev]
+#debug-assertions = false
