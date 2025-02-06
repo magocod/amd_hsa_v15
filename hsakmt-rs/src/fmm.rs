@@ -314,12 +314,12 @@ pub unsafe fn fmm_translate_ioc_to_hsa_flags(ioc_flags: u32) -> HsaMemFlags {
     mflags
 }
 
-pub fn vm_create_and_init_object<'a>(
+pub fn vm_create_and_init_object(
     start: *mut std::os::raw::c_void,
     size: u64,
     handle: u64,
     mflags: HsaMemFlags,
-) -> vm_object_t<'a> {
+) -> vm_object_t {
     let mut object = vm_object_t::default();
 
     // if (object) {
@@ -347,13 +347,13 @@ pub fn vm_create_and_init_object<'a>(
     object
 }
 
-pub unsafe fn aperture_allocate_object<'a>(
-    app: &mut manageable_aperture_t<'a>,
+pub unsafe fn aperture_allocate_object(
+    app: &mut manageable_aperture_t,
     new_address: *mut std::os::raw::c_void,
     handle: u64,
     MemorySizeInBytes: u64,
     mflags: HsaMemFlags,
-) -> *mut vm_object_t<'a> {
+) -> *mut vm_object_t {
     // let new_object: *mut vm_object_t = std::ptr::null_mut();
 
     /* Allocate new object */
@@ -364,7 +364,7 @@ pub unsafe fn aperture_allocate_object<'a>(
     //     return std::ptr::null_mut();
     // }
 
-    // hsakmt_rbtree_insert(&mut app.tree, &mut new_object.node);
+    hsakmt_rbtree_insert(&mut app.tree, &mut new_object.node);
 
     &mut new_object as *mut vm_object_t
 }
@@ -845,15 +845,15 @@ impl HsakmtGlobals {
     /* After allocating the memory, return the vm_object created for this memory.
      * Return NULL if any failure.
      */
-    pub unsafe fn fmm_allocate_memory_object<'a>(
+    pub unsafe fn fmm_allocate_memory_object(
         &self,
         gpu_id: u32,
         mem: *mut std::os::raw::c_void,
         MemorySizeInBytes: u64,
-        aperture: &mut manageable_aperture_t<'a>,
+        aperture: &mut manageable_aperture_t,
         mmap_offset: &mut u64,
         ioc_flags: u32,
-    ) -> *mut vm_object_t<'a> {
+    ) -> *mut vm_object_t {
         let mut args = kfd_ioctl_alloc_memory_of_gpu_args {
             va_addr: std::ptr::null_mut(),
             size: 0,
@@ -938,19 +938,21 @@ impl HsakmtGlobals {
         vm_obj
     }
 
-    pub unsafe fn __fmm_allocate_device<'a>(
+    pub unsafe fn __fmm_allocate_device(
         &self,
         gpu_id: u32,
         address: *mut std::os::raw::c_void,
         MemorySizeInBytes: u64,
-        aperture: &mut manageable_aperture_t<'a>,
+        aperture_ptr: *mut manageable_aperture_t,
         mmap_offset: &mut u64,
         ioc_flags: u32,
         alignment: u64,
-        vm_obj: *mut *mut vm_object_t<'a>,
+        vm_obj: *mut *mut vm_object_t,
     ) -> *mut std::os::raw::c_void {
         let mut mem: *mut std::os::raw::c_void = std::ptr::null_mut();
         let obj: *mut vm_object_t = std::ptr::null_mut();
+
+        let aperture = &mut *(aperture_ptr);
 
         /* Check that aperture is properly initialized/supported */
         if !aperture_is_valid(aperture.base, aperture.limit) {
@@ -985,6 +987,7 @@ impl HsakmtGlobals {
         );
 
         if !obj.is_null() {
+            let aperture = &mut *(aperture_ptr);
             /*
              * allocation of memory in device failed.
              * Release region in aperture

@@ -79,12 +79,12 @@ impl Default for manageable_aperture<'_> {
                 prev: None,
             },
             tree: rbtree_s {
-                root: None,
-                sentinel: None,
+                root: std::ptr::null_mut(),
+                sentinel: rbtree_node_t::default(),
             },
             user_tree: rbtree_s {
-                root: None,
-                sentinel: None,
+                root: std::ptr::null_mut(),
+                sentinel: rbtree_node_t::default(),
             },
             is_cpu_accessible: false,
             ops: manageable_aperture_ops_t {
@@ -266,7 +266,7 @@ impl Clone for HsaKmtFmmGlobal<'_> {
 }
 
 // #[derive(Debug)]
-pub struct vm_object<'a> {
+pub struct vm_object {
     pub start: *mut std::os::raw::c_void,
     pub userptr: *mut std::os::raw::c_void,
     pub userptr_size: u64,
@@ -276,8 +276,8 @@ pub struct vm_object<'a> {
                      	*/
     pub handle: u64, /* opaque */
     pub node_id: u32,
-    pub node: rbtree_node_t<'a>,
-    pub user_node: rbtree_node_t<'a>,
+    pub node: rbtree_node_t,
+    pub user_node: rbtree_node_t,
 
     pub mflags: HsaMemFlags, /* memory allocation flags */
     /* Registered nodes to map on SVM mGPU */
@@ -298,9 +298,9 @@ pub struct vm_object<'a> {
     pub is_imported_kfd_bo: bool,
 }
 
-pub type vm_object_t<'a> = vm_object<'a>;
+pub type vm_object_t = vm_object;
 
-impl Default for vm_object<'_> {
+impl Default for vm_object {
     fn default() -> Self {
         Self {
             start: std::ptr::null_mut(),
