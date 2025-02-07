@@ -59,6 +59,8 @@ pub struct kfd_ioctl_acquire_vm_args {
 pub const KFD_IOC_CACHE_POLICY_COHERENT: usize = 0;
 pub const KFD_IOC_CACHE_POLICY_NONCOHERENT: usize = 1;
 
+#[repr(C)]
+#[derive(Debug, PartialEq)]
 pub struct kfd_ioctl_set_memory_policy_args {
     pub alternate_aperture_base: *mut __u64, /* to KFD */
     pub alternate_aperture_size: __u64,      /* to KFD */
@@ -98,10 +100,12 @@ pub const KFD_IOC_ALLOC_MEM_FLAGS_CONTIGUOUS_BEST_EFFORT: usize = 1 << 23;
  * @gpu_id:      device identifier
  * @flags:       memory type and attributes. See KFD_IOC_ALLOC_MEM_FLAGS above
  */
+#[repr(C)]
+#[derive(Debug, PartialEq)]
 pub struct kfd_ioctl_alloc_memory_of_gpu_args {
     pub va_addr: *mut __u64, /* to KFD */
     pub size: __u64,         /* to KFD */
-    pub handle: __u64,       /* from KFD */
+    pub handle: *mut __u64,  /* from KFD */
     pub mmap_offset: __u64,  /* to KFD (userptr), from KFD (mmap offset) */
     pub gpu_id: __u32,       /* to KFD */
     pub flags: __u32,
@@ -111,6 +115,14 @@ pub struct kfd_ioctl_alloc_memory_of_gpu_args {
  *
  * @handle: memory handle returned by alloc
  */
+#[repr(C)]
+#[derive(Debug, PartialEq)]
 pub struct kfd_ioctl_free_memory_of_gpu_args {
-    pub handle: __u64, /* to KFD */
+    pub handle: *mut __u64, /* to KFD */
 }
+
+const ioc_free_mem_gpu_1: u64 = (('K') as u64) << (0 + 8);
+const ioc_free_mem_gpu_2: u64 =
+    ((std::mem::size_of::<kfd_ioctl_free_memory_of_gpu_args>()) << ((0 + 8) + 8)) as u64;
+pub const AMDKFD_IOC_FREE_MEMORY_OF_GPU: u64 =
+    ((1) << (((0 + 8) + 8) + 14)) | ioc_free_mem_gpu_1 | ((0x17) << 0) | ioc_free_mem_gpu_2;

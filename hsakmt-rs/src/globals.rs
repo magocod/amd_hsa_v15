@@ -7,6 +7,7 @@
     clippy::mixed_case_hex_literals
 )]
 
+use crate::fmm::START_NON_CANONICAL_ADDR;
 use crate::fmm_types::{
     gpu_mem_t, manageable_aperture_t, svm_t, DRM_FIRST_RENDER_NODE, DRM_LAST_RENDER_NODE,
 };
@@ -85,8 +86,11 @@ impl FmmGlobals<'_> {
             all_gpu_id_array: vec![],
             dgpu_shared_aperture_base: std::ptr::null_mut(),
             dgpu_shared_aperture_limit: std::ptr::null_mut(),
-            cpuvm_aperture: Default::default(),
-            mem_handle_aperture: Default::default(),
+            cpuvm_aperture: manageable_aperture_t::INIT_MANAGEABLE_APERTURE(0, 0),
+            mem_handle_aperture: manageable_aperture_t::INIT_MANAGEABLE_APERTURE(
+                START_NON_CANONICAL_ADDR as usize,
+                (START_NON_CANONICAL_ADDR + (1 << 47)) as usize,
+            ),
         }
     }
 }

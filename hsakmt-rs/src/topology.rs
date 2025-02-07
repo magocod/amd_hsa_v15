@@ -104,16 +104,16 @@ pub unsafe fn topology_sysfs_get_generation(gen_start: &mut u32) -> HsakmtStatus
     HSAKMT_STATUS_SUCCESS
 }
 
-pub fn HSA_GET_GFX_VERSION_MAJOR(gfxv: u16) -> u8 {
-    (((gfxv) / 10000) % 100) as u8
+pub fn HSA_GET_GFX_VERSION_MAJOR(gfxv: u32) -> u32 {
+    (((gfxv) / 10000) % 100) as u32
 }
 
-pub fn HSA_GET_GFX_VERSION_MINOR(gfxv: u16) -> u8 {
-    (((gfxv) / 100) % 100) as u8
+pub fn HSA_GET_GFX_VERSION_MINOR(gfxv: u16) -> u32 {
+    (((gfxv) / 100) % 100) as u32
 }
 
-pub fn HSA_GET_GFX_VERSION_STEP(gfxv: u16) -> u8 {
-    (((gfxv) / 100) % 100) as u8
+pub fn HSA_GET_GFX_VERSION_STEP(gfxv: u16) -> u32 {
+    (((gfxv) / 100) % 100) as u32
 }
 
 #[allow(clippy::manual_find)]
@@ -202,7 +202,7 @@ pub unsafe fn topology_get_node_props_from_drm(props: &mut HsaNodeProperties) ->
     let name = amdgpu_get_marketing_name(device_handle);
     if !name.is_null() {
         let _cs = CStr::from_ptr(name);
-        // println!("MarketingName {:?}", cs.to_string_lossy().to_string());
+        println!("MarketingName {:?}", _cs.to_string_lossy().to_string());
         // props.MarketingName = cs
     }
 
@@ -1172,11 +1172,11 @@ impl HsakmtGlobals {
             props.NumShaderBanks = simd_arrays_count / props.NumArrays;
         }
 
-        let gfxv_major = HSA_GET_GFX_VERSION_MAJOR(gfxv as u16);
+        let gfxv_major = HSA_GET_GFX_VERSION_MAJOR(gfxv);
         let gfxv_minor = HSA_GET_GFX_VERSION_MINOR(gfxv as u16);
         let gfxv_stepping = HSA_GET_GFX_VERSION_STEP(gfxv as u16);
 
-        let hsa_gfxip = find_hsa_gfxip_device(props.DeviceId, gfxv_major);
+        let hsa_gfxip = find_hsa_gfxip_device(props.DeviceId, gfxv_major as u8);
 
         if hsa_gfxip.is_some() || gfxv > 0 {
             // snprintf(per_node_override, sizeof(per_node_override), "HSA_OVERRIDE_GFX_VERSION_%d", node_id);
@@ -1676,6 +1676,8 @@ impl HsakmtGlobals {
 
     pub fn hsakmt_topology_setup_is_dgpu_param(&mut self, props: &HsaNodeProperties) {
         /* if we found a dGPU node, then treat the whole system as dGPU */
+        println!("DeviceId {} hsakmt_is_dgpu = true", props.DeviceId);
+
         if props.NumCPUCores == 0 && props.NumFComputeCores > 0 {
             self.hsakmt_is_dgpu = true;
         }
@@ -1683,9 +1685,12 @@ impl HsakmtGlobals {
 
     pub fn hsakmt_topology_setup_is_dgpu_param_v2(
         &mut self,
-        NumCPUCores: i32,
-        NumFComputeCores: i32,
+        DeviceId: u16,
+        NumCPUCores: u32,
+        NumFComputeCores: u32,
     ) {
+        println!("DeviceId {} hsakmt_is_dgpu = true", DeviceId);
+
         /* if we found a dGPU node, then treat the whole system as dGPU */
         if NumCPUCores == 0 && NumFComputeCores > 0 {
             self.hsakmt_is_dgpu = true;

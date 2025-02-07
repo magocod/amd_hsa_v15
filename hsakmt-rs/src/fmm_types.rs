@@ -12,7 +12,7 @@ use crate::hsakmttypes::{HsaMemFlagUnion, HsaMemFlags, HSA_ENGINE_ID};
 use crate::rbtree::{rbtree_node_t, rbtree_s, rbtree_t};
 use amdgpu_drm_sys::bindings::amdgpu_device;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct vm_area<'a> {
     pub start: *mut std::os::raw::c_void,
     pub end: *mut std::os::raw::c_void,
@@ -31,7 +31,7 @@ pub struct HsakmtGlobalsArgs {
  * schemes.
  */
 #[allow(clippy::type_complexity)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct manageable_aperture_ops_t {
     // allocate_area_aligned: &'static fn(&[u8]) -> *mut std::os::raw::c_void,
     pub allocate_area_aligned: Option<
@@ -49,7 +49,7 @@ pub struct manageable_aperture_ops_t {
     // void (*release_area)(manageable_aperture_t *aper, void *addr, uint64_t size);
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct manageable_aperture<'a> {
     pub base: *mut std::os::raw::c_void,
     pub limit: *mut std::os::raw::c_void,
@@ -63,15 +63,13 @@ pub struct manageable_aperture<'a> {
     pub ops: manageable_aperture_ops_t,
 }
 
-unsafe impl Send for manageable_aperture<'_> {}
-
-impl Default for manageable_aperture<'_> {
-    fn default() -> Self {
+impl manageable_aperture<'_> {
+    pub fn INIT_MANAGEABLE_APERTURE(base_value: usize, limit_value: usize) -> Self {
         Self {
-            base: std::ptr::null_mut(),
-            limit: std::ptr::null_mut(),
+            base: base_value as *mut std::os::raw::c_void,
+            limit: limit_value as *mut std::os::raw::c_void,
             align: 0,
-            guard_pages: 0,
+            guard_pages: 1,
             vm_ranges: vm_area {
                 start: std::ptr::null_mut(),
                 end: std::ptr::null_mut(),
@@ -80,11 +78,11 @@ impl Default for manageable_aperture<'_> {
             },
             tree: rbtree_s {
                 root: std::ptr::null_mut(),
-                sentinel: rbtree_node_t::default(),
+                sentinel: Default::default(),
             },
             user_tree: rbtree_s {
                 root: std::ptr::null_mut(),
-                sentinel: rbtree_node_t::default(),
+                sentinel: Default::default(),
             },
             is_cpu_accessible: false,
             ops: manageable_aperture_ops_t {
@@ -94,6 +92,38 @@ impl Default for manageable_aperture<'_> {
         }
     }
 }
+
+unsafe impl Send for manageable_aperture<'_> {}
+
+// impl Default for manageable_aperture<'_> {
+//     fn default() -> Self {
+//         Self {
+//             base: std::ptr::null_mut(),
+//             limit: std::ptr::null_mut(),
+//             align: 0,
+//             guard_pages: 1,
+//             vm_ranges: vm_area {
+//                 start: std::ptr::null_mut(),
+//                 end: std::ptr::null_mut(),
+//                 next: None,
+//                 prev: None,
+//             },
+//             tree: rbtree_s {
+//                 root: std::ptr::null_mut(),
+//                 sentinel: rbtree_node_t::default(),
+//             },
+//             user_tree: rbtree_s {
+//                 root: std::ptr::null_mut(),
+//                 sentinel: rbtree_node_t::default(),
+//             },
+//             is_cpu_accessible: false,
+//             ops: manageable_aperture_ops_t {
+//                 allocate_area_aligned: None,
+//                 release_area: None,
+//             },
+//         }
+//     }
+// }
 
 /* Memory manager for an aperture */
 pub type manageable_aperture_t<'a> = manageable_aperture<'a>;
@@ -138,8 +168,8 @@ impl Default for svm_t<'_> {
     fn default() -> Self {
         Self {
             apertures: [
-                manageable_aperture_t::default(),
-                manageable_aperture_t::default(),
+                manageable_aperture_t::INIT_MANAGEABLE_APERTURE(0, 0),
+                manageable_aperture_t::INIT_MANAGEABLE_APERTURE(0, 0),
             ],
             dgpu_aperture: std::ptr::null_mut(),
             dgpu_alt_aperture: std::ptr::null_mut(),
@@ -210,8 +240,8 @@ impl Default for gpu_mem_t<'_> {
                 base: std::ptr::null_mut(),
                 limit: std::ptr::null_mut(),
             },
-            scratch_physical: manageable_aperture::default(),
-            gpuvm_aperture: manageable_aperture::default(),
+            scratch_physical: manageable_aperture::INIT_MANAGEABLE_APERTURE(0, 0),
+            gpuvm_aperture: manageable_aperture::INIT_MANAGEABLE_APERTURE(0, 0),
             drm_render_fd: 0,
             usable_peer_id_num: 0,
             usable_peer_id_array: vec![],

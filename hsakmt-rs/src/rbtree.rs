@@ -85,6 +85,7 @@ pub fn rbtree_init(tree: &mut rbtree_t) {
     tree.root = &mut tree.sentinel as *mut rbtree_node_t;
 }
 
+#[allow(unused_assignments)]
 unsafe fn hsakmt_rbtree_insert_value(
     mut temp: &mut rbtree_node_t,
     node: *mut rbtree_node_t,
@@ -158,15 +159,15 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
                 node = node_parent_parent;
             } else {
                 if (node as *mut rbtree_node_t) == node_parent.right {
-                    node = node_parent
+                    node = node_parent;
 
-                    // rbtree_left_rotate(root, sentinel, node);
+                    rbtree_left_rotate(root, &tree.sentinel, node_st);
                 }
 
                 rbt_black(node_parent);
                 rbt_red(node_parent_parent);
 
-                // rbtree_right_rotate(root, sentinel, node_parent_parent);
+                rbtree_right_rotate(root, &tree.sentinel, node_parent_parent);
             }
         } else {
             let node_parent = &mut *(node_st.parent);
@@ -185,13 +186,13 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
                 if node == node_parent.left {
                     node = node_parent;
 
-                    // rbtree_right_rotate(root, sentinel, node);
+                    rbtree_right_rotate(root, &tree.sentinel, node_st);
                 }
 
                 rbt_black(node_parent);
                 rbt_red(node_parent_parent);
 
-                // rbtree_left_rotate(root, sentinel, node->parent->parent);
+                rbtree_left_rotate(root, &tree.sentinel, node_parent_parent);
             }
         }
     }
@@ -199,6 +200,188 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
     let root_st = &mut *(tree.root);
 
     rbt_black(root_st);
+}
+
+pub unsafe fn rbtree_min(
+    mut node: *mut rbtree_node_t,
+    sentinel: *mut rbtree_node_t,
+) -> *mut rbtree_node_t {
+    let node_st = &mut *(node);
+
+    while node_st.left != sentinel {
+        node = &mut *node_st.left;
+    }
+
+    node
+}
+
+#[allow(unused_assignments)]
+pub unsafe fn hsakmt_rbtree_delete(tree: &mut rbtree_s, node: *mut rbtree_node_s) {
+    // let root_st = &mut *(tree.root);
+
+    let sentinel = &mut tree.sentinel as *mut rbtree_node_t;
+    let root = &mut tree.root as *mut *mut rbtree_node_t;
+
+    let node_st = &mut *(node);
+
+    let mut temp: *mut rbtree_node_t = std::ptr::null_mut();
+    let mut subst: *mut rbtree_node_t = std::ptr::null_mut();
+
+    /* a binary tree delete */
+
+    if node_st.left == sentinel {
+        temp = node_st.right;
+        subst = node;
+    } else if node_st.right == sentinel {
+        temp = node_st.left;
+        subst = node;
+    } else {
+        let subst = rbtree_min(node_st.right, sentinel);
+
+        let subst_st = &mut (*subst);
+
+        if subst_st.left != sentinel {
+            temp = subst_st.left;
+        } else {
+            temp = subst_st.right;
+        }
+    }
+
+    if subst == *root {
+        *root = temp;
+        rbt_black(&mut *temp);
+
+        return;
+    }
+
+    let subst_st = &mut (*subst);
+    let subst_parent = &mut (*subst_st.parent);
+
+    let temp_st = &mut (*temp);
+
+    let red = rbt_is_red(subst_st);
+
+    if subst == subst_parent.left {
+        subst_parent.left = temp;
+    } else {
+        subst_parent.right = temp;
+    }
+
+    if subst == node {
+        temp_st.parent = subst_st.parent;
+    } else {
+        if subst_st.parent == node {
+            temp_st.parent = subst;
+        } else {
+            temp_st.parent = subst_st.parent;
+        }
+
+        subst_st.left = node_st.left;
+        subst_st.right = node_st.right;
+        subst_st.parent = node_st.parent;
+        rbt_copy_color(subst_st, node_st);
+
+        let node_parent = &mut *(node_st.parent);
+
+        if node == *root {
+            *root = subst;
+        } else {
+            if node == node_parent.left {
+                node_parent.left = subst;
+            } else {
+                node_parent.right = subst;
+            }
+        }
+
+        let subst_left = &mut *(subst_st.left);
+        let subst_right = &mut *(subst_st.right);
+
+        if subst_st.left != sentinel {
+            subst_left.parent = subst;
+        }
+
+        if subst_st.right != sentinel {
+            subst_right.parent = subst;
+        }
+    }
+
+    if red {
+        return;
+    }
+
+    /* a delete fixup */
+
+    while temp != *root && rbt_is_black(temp_st) {
+        let temp_parent = &mut *(temp_st.parent);
+
+        if temp_st == &(*temp_parent.left) {
+            let mut w = temp_parent.right;
+            let w_st = &mut (*w);
+
+            if rbt_is_red(w_st) {
+                rbt_black(w_st);
+                rbt_red(&mut *temp_st.parent);
+                rbtree_left_rotate(root, &tree.sentinel, &mut *temp_st.parent);
+                w = temp_parent.right;
+            }
+
+            let w_left = &mut (*w_st.left);
+            let w_right = &mut (*w_st.right);
+
+            if rbt_is_black(w_left) && rbt_is_black(w_right) {
+                rbt_red(w_st);
+                temp = temp_st.parent;
+            } else {
+                if rbt_is_black(w_right) {
+                    rbt_black(w_left);
+                    rbt_red(w_st);
+
+                    rbtree_right_rotate(root, &tree.sentinel, w_st);
+                    w = temp_parent.right;
+                }
+
+                rbt_copy_color(w_st, temp_parent);
+                rbt_black(temp_parent);
+                rbt_black(w_right);
+
+                rbtree_left_rotate(root, &tree.sentinel, temp_parent);
+                temp = *root;
+            }
+        } else {
+            let mut w = temp_parent.left;
+            let w_st = &mut (*w);
+
+            if rbt_is_red(w_st) {
+                rbt_black(w_st);
+                rbt_red(temp_parent);
+                rbtree_right_rotate(root, &tree.sentinel, temp_parent);
+                w = temp_parent.left;
+            }
+
+            let w_left = &mut (*w_st.left);
+            let w_right = &mut (*w_st.right);
+
+            if rbt_is_black(w_left) && rbt_is_black(w_right) {
+                rbt_red(w_st);
+                temp = temp_parent;
+            } else {
+                if rbt_is_black(w_left) {
+                    rbt_black(w_right);
+                    rbt_red(w_st);
+                    rbtree_left_rotate(root, &tree.sentinel, w_st);
+                    w = temp_parent.left;
+                }
+
+                rbt_copy_color(w_st, temp_parent);
+                rbt_black(temp_parent);
+                rbt_black(w_left);
+                rbtree_right_rotate(root, &tree.sentinel, temp_parent);
+                temp = *root;
+            }
+        }
+    }
+
+    rbt_black(temp_st);
 }
 
 pub unsafe fn rbtree_left_rotate(
@@ -230,5 +413,37 @@ pub unsafe fn rbtree_left_rotate(
     }
 
     temp_st.left = node;
+    node.parent = temp;
+}
+
+pub unsafe fn rbtree_right_rotate(
+    root: *mut *mut rbtree_node_t,
+    sentinel: &rbtree_node_t,
+    node: &mut rbtree_node_t,
+) {
+    let temp = node.left;
+    let temp_st = &mut *(node.left);
+
+    node.left = temp_st.right;
+
+    let temp_right = &mut (*temp_st.right);
+
+    if temp_right != sentinel {
+        temp_right.parent = node;
+    }
+
+    temp_st.parent = node.parent;
+
+    let node_parent = &mut (*node.parent);
+
+    if node == &(**root) {
+        *root = temp;
+    } else if node == &mut (*node_parent.right) {
+        node_parent.right = temp;
+    } else {
+        node_parent.left = temp;
+    }
+
+    temp_st.right = node;
     node.parent = temp;
 }
