@@ -1645,6 +1645,7 @@ impl HsakmtGlobals {
 
         let err = self.hsakmt_fmm_init_process_apertures(self.topology.g_system.NumNodes);
         if err != HSAKMT_STATUS_SUCCESS {
+            println!("hsakmt_fmm_init_process_apertures error");
             self.topology_drop_snapshot();
             return err;
         }

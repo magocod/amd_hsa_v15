@@ -87,30 +87,63 @@ pub fn rbtree_init(tree: &mut rbtree_t) {
 
 #[allow(unused_assignments)]
 unsafe fn hsakmt_rbtree_insert_value(
-    mut temp: &mut rbtree_node_t,
+    mut temp: *mut rbtree_node_t,
     node: *mut rbtree_node_t,
-    sentinel: &mut rbtree_node_t,
+    sentinel: *mut rbtree_node_t,
 ) {
-    let mut p: *mut *mut rbtree_node_t = std::ptr::null_mut();
-    let node_st = &mut *(node);
+    let mut p: *mut *mut rbtree_node_t;
+
+    // let temp_st = &mut *(temp);
+    // let node_st = &mut *(node);
+    // let sentinel_st = &mut *(sentinel);
+
+    // println!("temp_st: {:?}", temp_st);
+    // println!("node_st: {:?}", node_st);
+    // println!("sentinel_st: {:?}", sentinel_st);
 
     loop {
-        let b = rbtree_key_compare(LKP_ALL() as u32, &node_st.key, &temp.key);
+        let temp_st = &mut *(temp);
+        let node_st = &mut *(node);
+
+        let b = rbtree_key_compare(LKP_ALL() as u32, &node_st.key, &temp_st.key);
+
+        // println!("root temp_st {:#?}", temp_st);
 
         p = if b < 0 {
-            &mut temp.left
+            // println!("temp_st.left");
+            if temp_st.left.is_null() {
+                temp_st.left = sentinel;
+            }
+            &mut temp_st.left
         } else {
-            &mut temp.right
+            // println!("temp_st.right");
+            if temp_st.right.is_null() {
+                temp_st.right = sentinel;
+            }
+            &mut temp_st.right
         };
 
-        if &(**p) == sentinel {
+        // println!("sentinel: {:?}", sentinel);
+
+        if *p == sentinel {
             break;
         }
 
-        temp = &mut **p;
+        // let v = *p;
+
+        // println!("v {:#?}", v.is_null());
+        // if v.is_null() {
+        //     *p = sentinel;
+        // }
+
+        temp = *p;
+
+        // break;
     }
 
     *p = node;
+
+    let node_st = &mut *(node);
 
     node_st.parent = temp;
     node_st.left = sentinel;
@@ -124,22 +157,31 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
     let root_st = &mut *(tree.root);
 
     let sentinel = &mut tree.sentinel as *mut rbtree_node_t;
-    let root = &mut tree.root as *mut *mut rbtree_node_t;
-
     let node_st = &mut *(node);
 
-    if root_st.key.eq(&tree.sentinel.key) {
+    if root_st.key == tree.sentinel.key {
         node_st.parent = std::ptr::null_mut();
         node_st.left = sentinel;
         node_st.right = sentinel;
         rbt_black(node_st);
 
+        let root = &mut tree.root as *mut *mut rbtree_node_t;
+
         *root = node;
+
+        println!("first node");
+        println!("node_st: {:#?}", node_st);
 
         return;
     }
 
-    hsakmt_rbtree_insert_value(root_st, node, &mut tree.sentinel);
+    println!("TODO hsakmt_rbtree_insert_value ");
+
+    let root = &mut tree.root as *mut *mut rbtree_node_t;
+
+    println!("sentinel: {:#?}", tree.sentinel);
+
+    hsakmt_rbtree_insert_value(*root, node, sentinel);
 
     /* re-balance tree */
 

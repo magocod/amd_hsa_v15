@@ -65,7 +65,7 @@ pub struct manageable_aperture<'a> {
 
 impl manageable_aperture<'_> {
     pub fn INIT_MANAGEABLE_APERTURE(base_value: usize, limit_value: usize) -> Self {
-        Self {
+        let aperture = Self {
             base: base_value as *mut std::os::raw::c_void,
             limit: limit_value as *mut std::os::raw::c_void,
             align: 0,
@@ -89,7 +89,12 @@ impl manageable_aperture<'_> {
                 allocate_area_aligned: None,
                 release_area: None,
             },
-        }
+        };
+
+        // aperture.tree.sentinel.left = &mut aperture.tree.sentinel as *mut rbtree_node_t;
+        // aperture.tree.sentinel.right = &mut aperture.tree.sentinel as *mut rbtree_node_t;
+
+        aperture
     }
 }
 

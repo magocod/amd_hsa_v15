@@ -1171,7 +1171,7 @@ pub fn ALIGN_UP(x: u64, align: u64) -> u64 {
     let v = ((x) + (align) - 1) & !((align) - 1);
     println!("ALIGN_UP result v1 -> {}", v);
 
-    let v = ((x) + (align) - 1) & ((align) - 1);
+    let v = ((x) + (align) - 1) & !((align) - 1);
 
     v as u64
 }

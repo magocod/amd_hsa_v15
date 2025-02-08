@@ -26,8 +26,12 @@ pub fn BIT(x: u64) -> u64 {
     1 << (x)
 }
 
+// pub fn LKP_ALL() -> u64 {
+//     BIT(ADDR_BIT as u64) | BIT(SIZE_BIT as u64)
+// }
+
 pub fn LKP_ALL() -> u64 {
-    BIT(ADDR_BIT as u64) | BIT(SIZE_BIT as u64)
+    (1 << (0)) | (1 << (1))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

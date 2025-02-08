@@ -414,7 +414,7 @@ pub unsafe fn reserve_address(
         0,
     );
 
-    if (ret_addr == MAP_FAILED) {
+    if ret_addr == MAP_FAILED {
         return std::ptr::null_mut();
     }
 
@@ -641,6 +641,8 @@ impl HsakmtGlobals {
          */
         addr = aperture_allocate_area(aperture, std::ptr::null_mut(), page_size as u64, g_args);
 
+        // println!("aperture_allocate_area addr {}", addr.is_null());
+
         if !addr.is_null() {
             aperture_release_area(&aperture, addr, page_size as u64);
             let aperture = &mut self.fmm.svm.apertures[svm_default];
@@ -749,11 +751,7 @@ impl HsakmtGlobals {
 
         let mut map_size = 0;
 
-        let mut counter = 0;
-
         loop {
-            counter += 1;
-
             if !found && len >= SVM_MIN_VM_SIZE {
                 addr = base as *mut std::os::raw::c_void;
 
@@ -825,7 +823,7 @@ impl HsakmtGlobals {
         }
 
         base = ret_addr as u64;
-        if (base + map_size - 1 > limit) {
+        if base + map_size - 1 > limit {
             /* trim the tail that's not GPU-addressable */
             munmap(
                 (limit + 1) as *mut std::os::raw::c_void,
@@ -1007,6 +1005,8 @@ impl HsakmtGlobals {
         mmap_offset: &mut u64,
         ioc_flags: u32,
     ) -> *mut vm_object_t {
+        let mut vm_obj: *mut vm_object_t = std::ptr::null_mut();
+
         let mut args = kfd_ioctl_alloc_memory_of_gpu_args {
             va_addr: 0 as *mut u64,
             size: 0,
@@ -1086,10 +1086,13 @@ impl HsakmtGlobals {
         );
 
         /* Allocate object */
-        let vm_obj =
+        vm_obj =
             aperture_allocate_object(aperture, mem, args.handle as u64, MemorySizeInBytes, mflags);
 
-        // println!("mmap_offset {}, args.mmap_offset {}", mmap_offset, args.mmap_offset);
+        println!(
+            "mmap_offset {}, args.mmap_offset {}",
+            mmap_offset, args.mmap_offset
+        );
 
         if vm_obj.is_null() {
             println!("aperture_allocate_object error");
@@ -1112,10 +1115,10 @@ impl HsakmtGlobals {
             return std::ptr::null_mut();
         }
 
-        // println!("mmap_offset {}", mmap_offset);
-        if *mmap_offset > 0 {
-            *mmap_offset = args.mmap_offset;
-        }
+        println!("mmap_offset {}", mmap_offset);
+        // if *mmap_offset > 0 {
+        *mmap_offset = args.mmap_offset;
+        // }
 
         vm_obj
     }
@@ -1379,7 +1382,7 @@ impl HsakmtGlobals {
 
         let page_size = self.PAGE_SIZE();
 
-        println!("mmap_offset {}", mmap_offset);
+        println!("Map for CPU access mmap_offset {}", mmap_offset);
 
         /* Map for CPU access*/
         let ret = mmap(
@@ -1390,6 +1393,8 @@ impl HsakmtGlobals {
             mmap_fd,
             mmap_offset as off_t,
         );
+
+        println!("mmap ret {:?} {}", ret, ret.is_null());
 
         if ret == MAP_FAILED {
             let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
@@ -1403,19 +1408,20 @@ impl HsakmtGlobals {
 
             // return std::ptr::null_mut();
         }
-
-        println!("continue");
+        //
+        // println!("continue");
 
         /* Map for GPU access*/
-        let ret = self.hsakmt_fmm_map_to_gpu(mem, page_size as u64, std::ptr::null_mut());
-
-        if ret != HSAKMT_STATUS_SUCCESS {
-            println!("hsakmt_fmm_map_to_gpu error {:?}", ret);
-            self.__fmm_release(vm_obj, aperture);
-            return std::ptr::null_mut();
-        }
+        // let ret = self.hsakmt_fmm_map_to_gpu(mem, page_size as u64, std::ptr::null_mut());
+        //
+        // if ret != HSAKMT_STATUS_SUCCESS {
+        //     println!("hsakmt_fmm_map_to_gpu error {:?}", ret);
+        //     self.__fmm_release(vm_obj, aperture);
+        //     return std::ptr::null_mut();
+        // }
 
         mem
+        // std::ptr::null_mut()
     }
 
     pub unsafe fn hsakmt_fmm_init_process_apertures(&mut self, NumNodes: u32) -> HsakmtStatus {
@@ -1776,21 +1782,23 @@ impl HsakmtGlobals {
                 self.fmm.gpu_mem[i].gpu_id,
                 hsakmt_kfd_fd,
             );
-            self.fmm.gpu_mem[i].mmio_aperture.base = r;
+            println!("map_mmio r {}", r.is_null());
 
-            if !self.fmm.gpu_mem[i].mmio_aperture.base.is_null() {
-                let pt = (self.fmm.gpu_mem[i].mmio_aperture.base as *mut u8)
-                    .add((page_size - 1) as usize);
-                let r = pt.add((page_size - 1) as usize);
-
-                self.fmm.gpu_mem[i].mmio_aperture.limit = r as *mut std::os::raw::c_void;
-            } else {
-                // println!("Failed to map remapped mmio page on gpu_mem {}", g_m.gpu_id);
-                panic!(
-                    "Failed to map remapped mmio page on gpu_mem {}",
-                    self.fmm.gpu_mem[i].gpu_id
-                );
-            }
+            // self.fmm.gpu_mem[i].mmio_aperture.base = r;
+            //
+            // if !self.fmm.gpu_mem[i].mmio_aperture.base.is_null() {
+            //     let pt = (self.fmm.gpu_mem[i].mmio_aperture.base as *mut u8)
+            //         .add((page_size - 1) as usize);
+            //     let r = pt.add((page_size - 1) as usize);
+            //
+            //     self.fmm.gpu_mem[i].mmio_aperture.limit = r as *mut std::os::raw::c_void;
+            // } else {
+            //     // println!("Failed to map remapped mmio page on gpu_mem {}", g_m.gpu_id);
+            //     panic!(
+            //         "Failed to map remapped mmio page on gpu_mem {}",
+            //         self.fmm.gpu_mem[i].gpu_id
+            //     );
+            // }
         }
 
         HSAKMT_STATUS_SUCCESS
