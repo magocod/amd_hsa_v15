@@ -166,14 +166,14 @@ pub unsafe fn hsakmt_mmap_allocate_aligned(
 
     /* Unmap padding and guard pages */
     if aligned_addr > addr {
-        println!("aligned_addr > addr");
+        // println!("aligned_addr > addr");
         munmap(addr, VOID_PTRS_SUB(aligned_addr, addr) as usize);
     }
 
     let aligned_end = VOID_PTR_ADD(aligned_addr, size);
     let mapping_end = VOID_PTR_ADD(addr, aligned_padded_size);
     if mapping_end > aligned_end {
-        println!("VOID_PTRS_SUB(mapping_end, aligned_end)");
+        // println!("VOID_PTRS_SUB(mapping_end, aligned_end)");
         let r = VOID_PTRS_SUB(mapping_end, aligned_end) as usize;
         munmap(aligned_end, r);
     }
@@ -689,16 +689,16 @@ impl HsakmtGlobals {
             return HSAKMT_STATUS_SUCCESS;
         }
 
-        let orig_base = base;
+        let _orig_base = base;
 
         /* Align base and limit to huge page size */
         base = ALIGN_UP(base, GPU_HUGE_PAGE_SIZE as u64);
         limit = ((limit + 1) & !(GPU_HUGE_PAGE_SIZE as u64 - 1)) - 1;
 
-        println!(
-            "ALIGN_UP init_svm_apertures (orig_base: {}, base: {}, limit {})",
-            orig_base, base, limit
-        );
+        // println!(
+        //     "ALIGN_UP init_svm_apertures (orig_base: {}, base: {}, limit {})",
+        //     orig_base, base, limit
+        // );
 
         /* If the limit is greater or equal 47-bits of address space,
          * it means we have GFXv9 or later GPUs only. We don't need
@@ -708,18 +708,18 @@ impl HsakmtGlobals {
          * addresses the GPUs can handle.
          */
         let reserve_svm = self.fmm.svm.reserve_svm;
-        println!(
-            "init_svm_apertures limit {}, reserve_svm {}, ((1u64) << 47) - 1 = {}",
-            limit,
-            reserve_svm,
-            ((1u64) << 47) - 1
-        );
+        // println!(
+        //     "init_svm_apertures limit {}, reserve_svm {}, ((1u64) << 47) - 1 = {}",
+        //     limit,
+        //     reserve_svm,
+        //     ((1u64) << 47) - 1
+        // );
 
         if limit >= ((1u64) << 47) - 1 && !reserve_svm {
             let status = self.init_mmap_apertures(base, limit, align, guard_pages);
 
             if status == HSAKMT_STATUS_SUCCESS {
-                println!("continue init_svm_apertures");
+                // println!("continue init_svm_apertures");
                 return status;
             }
             /* fall through: fall back to reserved address space */
@@ -980,7 +980,7 @@ impl HsakmtGlobals {
     pub unsafe fn hsakmt_topology_is_svm_needed(&self, EngineId: &HSA_ENGINE_ID) -> bool {
         let hsakmt_is_dgpu = self.hsakmt_is_dgpu;
 
-        println!("hsakmt_is_dgpu: {} - {:?}", hsakmt_is_dgpu, EngineId.ui32);
+        // println!("hsakmt_is_dgpu: {} - {:?}", hsakmt_is_dgpu, EngineId.ui32);
 
         if hsakmt_is_dgpu {
             return true;
@@ -1038,14 +1038,14 @@ impl HsakmtGlobals {
 
         let b = ioc_flags & KFD_IOC_ALLOC_MEM_FLAGS_VRAM as u32;
 
-        println!("!hsakmt_is_dgpu: {} ioc_flags: {}", !hsakmt_is_dgpu, b);
+        // println!("!hsakmt_is_dgpu: {} ioc_flags: {}", !hsakmt_is_dgpu, b);
 
         if !hsakmt_is_dgpu && b > 0 {
             args.va_addr = VOID_PTRS_SUB(mem, aperture.base) as *mut u64;
         }
 
         if (ioc_flags & KFD_IOC_ALLOC_MEM_FLAGS_USERPTR as u32) > 0 {
-            println!("KFD_IOC_ALLOC_MEM_FLAGS_USERPTR");
+            // println!("KFD_IOC_ALLOC_MEM_FLAGS_USERPTR");
             args.mmap_offset = *mmap_offset;
         }
 
@@ -1070,7 +1070,7 @@ impl HsakmtGlobals {
             &mut args as *mut _ as *mut std::os::raw::c_void,
         );
 
-        println!("hsakmt_ioctl returned {}", r);
+        // println!("hsakmt_ioctl returned {}", r);
 
         if r > 0 {
             println!("AMDKFD_IOC_ALLOC_MEMORY_OF_GPU error");
@@ -1079,20 +1079,20 @@ impl HsakmtGlobals {
 
         let mflags = fmm_translate_ioc_to_hsa_flags(ioc_flags);
 
-        println!("{:#?}", args);
-        println!(
-            "mmap_offset {}, args.mmap_offset {}",
-            mmap_offset, args.mmap_offset
-        );
+        // println!("{:#?}", args);
+        // println!(
+        //     "mmap_offset {}, args.mmap_offset {}",
+        //     mmap_offset, args.mmap_offset
+        // );
 
         /* Allocate object */
         vm_obj =
             aperture_allocate_object(aperture, mem, args.handle as u64, MemorySizeInBytes, mflags);
 
-        println!(
-            "mmap_offset {}, args.mmap_offset {}",
-            mmap_offset, args.mmap_offset
-        );
+        // println!(
+        //     "mmap_offset {}, args.mmap_offset {}",
+        //     mmap_offset, args.mmap_offset
+        // );
 
         if vm_obj.is_null() {
             println!("aperture_allocate_object error");
@@ -1115,7 +1115,7 @@ impl HsakmtGlobals {
             return std::ptr::null_mut();
         }
 
-        println!("mmap_offset {}", mmap_offset);
+        // println!("mmap_offset {}", mmap_offset);
         // if *mmap_offset > 0 {
         *mmap_offset = args.mmap_offset;
         // }
@@ -1369,7 +1369,7 @@ impl HsakmtGlobals {
             return std::ptr::null_mut();
         }
 
-        println!("mem {} vm_obj {}", mem.is_null(), vm_obj.is_null());
+        // println!("mem {} vm_obj {}", mem.is_null(), vm_obj.is_null());
 
         mflags.st.Value = 0;
         mflags.st.ui32.NonPaged = 1;
@@ -1382,7 +1382,7 @@ impl HsakmtGlobals {
 
         let page_size = self.PAGE_SIZE();
 
-        println!("Map for CPU access mmap_offset {}", mmap_offset);
+        // println!("Map for CPU access mmap_offset {}", mmap_offset);
 
         /* Map for CPU access*/
         let ret = mmap(
@@ -1394,7 +1394,7 @@ impl HsakmtGlobals {
             mmap_offset as off_t,
         );
 
-        println!("mmap ret {:?} {}", ret, ret.is_null());
+        // println!("mmap ret {:?} {}", ret, ret.is_null());
 
         if ret == MAP_FAILED {
             let errno = std::io::Error::last_os_error().raw_os_error().unwrap();
@@ -1600,7 +1600,7 @@ impl HsakmtGlobals {
              */
             let gpu_mem_id = self.gpu_mem_find_by_gpu_id(process_apertures[i].gpu_id);
 
-            println!("gpu_mem_id i {} - {}", i, gpu_mem_id);
+            // println!("gpu_mem_id i {} - {}", i, gpu_mem_id);
 
             if gpu_mem_id < 0 {
                 continue;
@@ -1713,7 +1713,7 @@ impl HsakmtGlobals {
                 return ret;
             }
 
-            println!("init_svm_apertures continue");
+            // println!("init_svm_apertures continue");
 
             for process_aperture in process_apertures.iter() {
                 if !IS_CANONICAL_ADDR(process_aperture.gpuvm_limit) {
@@ -1771,18 +1771,18 @@ impl HsakmtGlobals {
             let b = self.hsakmt_topology_is_svm_needed(&self.fmm.gpu_mem[i].EngineId);
 
             if !b {
-                println!("hsakmt_topology_is_svm_needed no {}", b);
+                // println!("hsakmt_topology_is_svm_needed no {}", b);
                 continue;
             }
 
-            println!("hsakmt_topology_is_svm_needed yes {}", b);
+            // println!("hsakmt_topology_is_svm_needed yes {}", b);
 
             let r = self.map_mmio(
                 self.fmm.gpu_mem[i].node_id,
                 self.fmm.gpu_mem[i].gpu_id,
                 hsakmt_kfd_fd,
             );
-            println!("map_mmio r {}", r.is_null());
+            // println!("map_mmio r {}", r.is_null());
 
             // self.fmm.gpu_mem[i].mmio_aperture.base = r;
             //

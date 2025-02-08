@@ -1677,7 +1677,7 @@ impl HsakmtGlobals {
 
     pub fn hsakmt_topology_setup_is_dgpu_param(&mut self, props: &HsaNodeProperties) {
         /* if we found a dGPU node, then treat the whole system as dGPU */
-        println!("DeviceId {} hsakmt_is_dgpu = true", props.DeviceId);
+        // println!("DeviceId {} hsakmt_is_dgpu = true", props.DeviceId);
 
         if props.NumCPUCores == 0 && props.NumFComputeCores > 0 {
             self.hsakmt_is_dgpu = true;
@@ -1686,11 +1686,11 @@ impl HsakmtGlobals {
 
     pub fn hsakmt_topology_setup_is_dgpu_param_v2(
         &mut self,
-        DeviceId: u16,
+        _DeviceId: u16,
         NumCPUCores: u32,
         NumFComputeCores: u32,
     ) {
-        println!("DeviceId {} hsakmt_is_dgpu = true", DeviceId);
+        // println!("DeviceId {} hsakmt_is_dgpu = true", DeviceId);
 
         /* if we found a dGPU node, then treat the whole system as dGPU */
         if NumCPUCores == 0 && NumFComputeCores > 0 {

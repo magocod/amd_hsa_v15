@@ -1157,23 +1157,23 @@ pub const GPU_HUGE_PAGE_SIZE: usize = 2 << 20;
 // #define ALIGN_UP(x,align) (((uint64_t)(x) + (align) - 1) & ~(uint64_t)((align)-1))
 pub fn ALIGN_UP(x: u64, align: u64) -> u64 {
     // ((x) + (align) - 1) & !((align) - 1)
-    println!("value align {} -> -1 {}", align, align - 1);
-    println!("ALIGN_UP rust {}", ((align) - 1));
-    println!("ALIGN_UP rust !{}", !((align) - 1));
-    println!("ALIGN_UP rust v2 !{}", !((align) - 1) as i64);
+    // println!("value align {} -> -1 {}", align, align - 1);
+    // println!("ALIGN_UP rust {}", ((align) - 1));
+    // println!("ALIGN_UP rust !{}", !((align) - 1));
+    // println!("ALIGN_UP rust v2 !{}", !((align) - 1) as i64);
 
-    let v = ((x) + (align) - 1) & ((align) - 1);
-    println!("ALIGN_UP result v3 -> {}", v);
-
-    let v = ((x) + (align) - 1) as i64 & !(((align) - 1) as i64);
-    println!("ALIGN_UP result v2 -> {}", v);
+    // let v = ((x) + (align) - 1) & ((align) - 1);
+    // println!("ALIGN_UP result v3 -> {}", v);
+    //
+    // let v = ((x) + (align) - 1) as i64 & !(((align) - 1) as i64);
+    // println!("ALIGN_UP result v2 -> {}", v);
+    //
+    // let v = ((x) + (align) - 1) & !((align) - 1);
+    // println!("ALIGN_UP result v1 -> {}", v);
 
     let v = ((x) + (align) - 1) & !((align) - 1);
-    println!("ALIGN_UP result v1 -> {}", v);
 
-    let v = ((x) + (align) - 1) & !((align) - 1);
-
-    v as u64
+    v
 }
 
 //

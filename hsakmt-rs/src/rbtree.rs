@@ -169,17 +169,17 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
 
         *root = node;
 
-        println!("first node");
-        println!("node_st: {:#?}", node_st);
+        // println!("first node");
+        // println!("node_st: {:#?}", node_st);
 
         return;
     }
 
-    println!("TODO hsakmt_rbtree_insert_value ");
+    // println!("TODO hsakmt_rbtree_insert_value ");
 
     let root = &mut tree.root as *mut *mut rbtree_node_t;
 
-    println!("sentinel: {:#?}", tree.sentinel);
+    // println!("sentinel: {:#?}", tree.sentinel);
 
     hsakmt_rbtree_insert_value(*root, node, sentinel);
 
