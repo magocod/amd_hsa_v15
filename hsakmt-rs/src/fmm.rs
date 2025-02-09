@@ -22,15 +22,20 @@ use crate::kfd_ioctl::{
     KFD_IOC_CACHE_POLICY_NONCOHERENT,
 };
 use crate::libhsakmt::hsakmt_ioctl;
-use crate::rbtree::{hsakmt_rbtree_delete, hsakmt_rbtree_insert, rbtree_init};
-use crate::rbtree_amd::rbtree_key;
+use crate::rbtree::{
+    hsakmt_rbtree_delete, hsakmt_rbtree_insert, hsakmt_rbtree_prev, rbtree_init, rbtree_node_t,
+    rbtree_t,
+};
+use crate::rbtree_amd::{rbtree_key, rbtree_lookup_nearest, rbtree_min_max, LEFT, LKP_ALL, RIGHT};
 use libc::{
-    getenv, mmap, munmap, off_t, strcmp, strerror, EINVAL, MAP_ANONYMOUS, MAP_FAILED, MAP_FIXED,
-    MAP_FIXED_NOREPLACE, MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MPOL_DEFAULT, PROT_NONE,
-    PROT_READ, PROT_WRITE,
+    getenv, isalnum, mmap, munmap, off_t, strcmp, strerror, EINVAL, MAP_ANONYMOUS, MAP_FAILED,
+    MAP_FIXED, MAP_FIXED_NOREPLACE, MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MPOL_DEFAULT,
+    PROT_NONE, PROT_READ, PROT_WRITE,
 };
 use numa_sys::numaif_bindings::mbind;
 use std::ffi::CString;
+
+pub const NON_VALID_GPU_ID: usize = 0;
 
 // #define START_NON_CANONICAL_ADDR (1ULL << 47)
 // #define END_NON_CANONICAL_ADDR (~0UL - (1UL << 47))
@@ -358,7 +363,7 @@ pub fn vm_create_and_init_object(
     object.metadata = std::ptr::null_mut();
     object.user_data = std::ptr::null_mut();
     object.is_imported_kfd_bo = false;
-    object.node.key = rbtree_key(start as u64, size);
+    object.node.key = rbtree_key(start as u64, size as i64);
     object.user_node.key = rbtree_key(0, 0);
     // }
 
@@ -419,6 +424,238 @@ pub unsafe fn reserve_address(
     }
 
     ret_addr
+}
+
+// #define vm_object_tree(app, is_userptr)				\
+// ((is_userptr) ? &(app)->user_tree : &(app)->tree)
+
+pub fn vm_object_tree<'a>(
+    app: &'a mut manageable_aperture_t<'a>,
+    is_userptr: i32,
+) -> &'a mut rbtree_t {
+    if is_userptr > 0 {
+        &mut app.user_tree
+    } else {
+        &mut app.tree
+    }
+}
+
+// #define container_of(ptr, type, member) ({			\
+// char *__mptr = (void *)(ptr);			\
+// ((type *)(__mptr - offsetof(type, member))); })
+//
+// #define rb_entry(ptr, type, member)				\
+// container_of(ptr, type, member)
+
+// #define vm_object_entry(n, is_userptr) ({			\
+// (is_userptr) == 0 ?				\
+// rb_entry(n, vm_object_t, node) :		\
+// rb_entry(n, vm_object_t, user_node); })
+
+pub unsafe fn vm_object_entry(n: *mut rbtree_node_t, is_userptr: i32) -> *mut vm_object_t {
+    let ptr = n as *mut std::os::raw::c_void as *mut u8;
+
+    if is_userptr == 0 {
+        // rb_entry(n, node)
+
+        let offset_node: usize = {
+            let c = std::mem::MaybeUninit::uninit();
+            let c_ptr: *const vm_object_t = c.as_ptr();
+
+            // cast to u8 pointers so we get offset in bytes
+            let c_u8_ptr = c_ptr as *const u8;
+            let f_u8_ptr = std::ptr::addr_of!((*c_ptr).node) as *const u8;
+
+            f_u8_ptr.offset_from(c_u8_ptr) as usize
+        };
+
+        let v = ptr.sub(offset_node);
+        v as *mut vm_object_t
+    } else {
+        // rb_entry(n, user_node)
+
+        let offset_user_node: usize = {
+            let c = std::mem::MaybeUninit::uninit();
+            let c_ptr: *const vm_object_t = c.as_ptr();
+
+            // cast to u8 pointers so we get offset in bytes
+            let c_u8_ptr = c_ptr as *const u8;
+            let f_u8_ptr = std::ptr::addr_of!((*c_ptr).user_node) as *const u8;
+
+            f_u8_ptr.offset_from(c_u8_ptr) as usize
+        };
+
+        let v = ptr.sub(offset_user_node);
+        v as *mut vm_object_t
+    }
+
+    // std::ptr::null_mut()
+}
+
+pub unsafe fn vm_find_object_by_address_userptr_range(
+    app: &mut manageable_aperture_t,
+    address: *mut std::os::raw::c_void,
+    is_userptr: i32,
+) -> *mut vm_object_t {
+    let mut cur: *mut vm_object_t = std::ptr::null_mut();
+
+    // let tree = vm_object_tree(app, is_userptr);
+    let tree = if is_userptr > 0 {
+        &mut app.user_tree
+    } else {
+        &mut app.tree
+    };
+
+    let mut key = rbtree_key(address as u64, 0);
+
+    let mut rn = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, RIGHT as i32);
+
+    let mut ln: *mut rbtree_node_t;
+    let mut start: *mut std::os::raw::c_void;
+    let mut size: u64;
+
+    /* all nodes might sit on left side of *address*, in this case rn is NULL.
+     * So pick up the rightest one as rn.
+     */
+    if rn.is_null() {
+        rn = rbtree_min_max(tree, RIGHT as i32);
+    }
+
+    if is_userptr > 0 {
+        /* userptr might overlap. Need walk through the tree from right to left as only left nodes
+         * can obtain the *address*
+         */
+        ln = rbtree_min_max(tree, LEFT as i32);
+    } else {
+        /* if key->size is -1, it match the node with start <= address.
+         * if key->size is 0, it match the node with start < address.
+         */
+        key = rbtree_key(address as u64, -1);
+        ln = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, LEFT as i32);
+    }
+    if ln.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    while !rn.is_null() {
+        cur = vm_object_entry(rn, is_userptr);
+
+        let cur_st = &mut (*cur);
+
+        if is_userptr == 0 {
+            start = cur_st.start;
+            size = cur_st.size;
+        } else {
+            start = cur_st.userptr;
+            size = cur_st.userptr_size;
+        }
+
+        let b = (address as u64) < ((start as u64) + size);
+
+        if address >= start && b {
+            break;
+        }
+
+        cur = std::ptr::null_mut();
+
+        if ln == rn {
+            break;
+        }
+
+        rn = hsakmt_rbtree_prev(tree, rn);
+    }
+
+    cur /* NULL if not found */
+}
+
+pub unsafe fn vm_find_object_by_userptr_range(
+    app: &mut manageable_aperture_t,
+    address: *mut std::os::raw::c_void,
+) -> *mut vm_object_t {
+    vm_find_object_by_address_userptr_range(app, address, 1)
+}
+
+pub unsafe fn vm_find_object_by_address_range(
+    app: &mut manageable_aperture_t,
+    address: *mut std::os::raw::c_void,
+) -> *mut vm_object_t {
+    vm_find_object_by_address_userptr_range(app, address, 0)
+}
+
+pub unsafe fn vm_find_object_by_address_userptr(
+    app: &mut manageable_aperture_t,
+    address: *mut std::os::raw::c_void,
+    size: u64,
+    is_userptr: i32,
+) -> *mut vm_object_t {
+    let mut cur: *mut vm_object_t = std::ptr::null_mut();
+
+    // let tree = vm_object_tree(app, is_userptr);
+    let tree = if is_userptr > 0 {
+        &mut app.user_tree
+    } else {
+        &mut app.tree
+    };
+
+    let key = rbtree_key(address as u64, size as i64);
+
+    let mut start: *mut std::os::raw::c_void;
+    let mut s: u64 = 0;
+
+    /* rbtree_lookup_nearest(,,,RIGHT) will return a node with
+     * its size >= key.size and its address >= key.address
+     * if there are two nodes with format(address, size),
+     * (0x100, 16) and (0x110, 8). the key is (0x100, 0),
+     * then node (0x100, 16) will be returned.
+     */
+    let n = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, RIGHT as i32);
+
+    if !n.is_null() {
+        cur = vm_object_entry(n, is_userptr);
+        let cur_st = &mut (*cur);
+
+        if is_userptr == 0 {
+            start = cur_st.start;
+            s = cur_st.size;
+        } else {
+            start = cur_st.userptr;
+            s = cur_st.userptr_size;
+        }
+
+        if start != address {
+            return std::ptr::null_mut();
+        }
+
+        if size > 0 {
+            return if size == s { cur } else { std::ptr::null_mut() };
+        }
+
+        /* size is 0, make sure there is only one node whose address == key.address*/
+        let key = rbtree_key(address as u64, -1);
+        let rn = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, LEFT as i32);
+
+        if rn != n {
+            return std::ptr::null_mut();
+        }
+    }
+
+    cur /* NULL if not found */
+}
+
+pub unsafe fn vm_find_object_by_userptr(
+    app: &mut manageable_aperture_t,
+    address: *mut std::os::raw::c_void,
+    size: u64,
+) -> *mut vm_object_t {
+    vm_find_object_by_address_userptr(app, address, size, 1)
+}
+
+pub unsafe fn vm_find_object_by_address(
+    app: &mut manageable_aperture_t,
+    address: *mut std::os::raw::c_void,
+    size: u64,
+) -> *mut vm_object_t {
+    vm_find_object_by_address_userptr(app, address, size, 0)
 }
 
 impl HsakmtGlobals {
@@ -1260,27 +1497,185 @@ impl HsakmtGlobals {
         0
     }
 
+    /* vm_find_object - Find a VM object in any aperture
+     *
+     * @addr: VM address of the object
+     * @size: size of the object, 0 means "don't care",
+     *        UINT64_MAX means addr can match any address within the object
+     * @out_aper: Aperture where the object was found
+     *
+     * Returns a pointer to the object if found, NULL otherwise. If an
+     * object is found, this function returns with the
+     * (*out_aper)->fmm_mutex locked.
+     */
+    pub unsafe fn vm_find_object(
+        &mut self,
+        addr: *mut std::os::raw::c_void,
+        size: u64,
+        out_aper: *mut *mut manageable_aperture_t,
+    ) -> *mut vm_object_t {
+        let mut aper: *mut manageable_aperture_t = std::ptr::null_mut();
+
+        let range = size == u64::MAX; // UINT64_MAX
+        let mut userptr = false;
+        let mut obj: *mut vm_object_t = std::ptr::null_mut();
+
+        for i in 0..self.fmm.gpu_mem.len() {
+            if self.fmm.gpu_mem[i].gpu_id != NON_VALID_GPU_ID as u32
+                && addr >= self.fmm.gpu_mem[i].gpuvm_aperture.base
+                && addr <= self.fmm.gpu_mem[i].gpuvm_aperture.limit
+            {
+                aper = &mut self.fmm.gpu_mem[i].gpuvm_aperture;
+                break;
+            }
+        }
+
+        if aper.is_null() {
+            if (addr >= self.fmm.mem_handle_aperture.base)
+                && (addr <= self.fmm.mem_handle_aperture.limit)
+            {
+                aper = &mut self.fmm.mem_handle_aperture;
+            }
+        }
+
+        if aper.is_null() {
+            if self.fmm.svm.dgpu_aperture.is_null() {
+                panic!("TODO no_svm");
+                // goto no_svm;
+            }
+
+            if addr >= (*self.fmm.svm.dgpu_aperture).base
+                && (addr <= (*self.fmm.svm.dgpu_aperture).limit)
+            {
+                aper = self.fmm.svm.dgpu_aperture;
+                // println!("aperture_error is null {}", aper.is_null());
+            } else if (addr >= (*self.fmm.svm.dgpu_alt_aperture).base)
+                && (addr <= (*self.fmm.svm.dgpu_alt_aperture).limit)
+            {
+                aper = self.fmm.svm.dgpu_alt_aperture;
+            } else {
+                aper = self.fmm.svm.dgpu_aperture;
+                userptr = true;
+            }
+        }
+
+        // println!("aperture_error is null {}", aper.is_null());
+
+        // let mmap_aperture_ops = manageable_aperture_ops_t {
+        //     allocate_area_aligned: Some(mmap_aperture_allocate_aligned),
+        //     release_area: Some(mmap_aperture_release)
+        // };
+        //
+        // let page_size = self.PAGE_SIZE();
+        //
+        // // pthread_mutex_lock(&aper->fmm_mutex);
+        // if range {
+        //     let aper_st = &mut (*aper);
+        // 	/* mmap_apertures can have userptrs in them. Try to
+        // 	 * look up addresses as userptrs first to sort out any
+        // 	 * ambiguity of multiple overlapping mappings at
+        // 	 * different GPU addresses.
+        // 	 */
+        // 	if userptr || aper_st.ops == mmap_aperture_ops {
+        //         obj = vm_find_object_by_userptr_range(aper_st, addr);
+        //     }
+        //
+        // 	if obj.is_null() && !userptr {
+        //         obj = vm_find_object_by_address_range(aper_st, addr);
+        //     }
+        // } else {
+        //     let aper_st = &mut (*aper);
+        //
+        //     if userptr || aper_st.ops == mmap_aperture_ops {
+        //         obj = vm_find_object_by_userptr(aper_st, addr, size);
+        //     }
+        //
+        //     if obj.is_null() && !userptr {
+        //         // println!("aperture_error is null {}", aper.is_null());
+        //
+        //         let page_offset = (addr as u64) & (page_size as u64 - 1) ;
+        //
+        // 		let page_addr: *mut std::os::raw::c_void = ((addr as u8) as u64 - page_offset) as *mut std::os::raw::c_void;
+        //
+        // 		obj = vm_find_object_by_address(aper_st, page_addr, 0);
+        // 		/* If we find a userptr here, it's a match on
+        // 		 * the aligned GPU address. Make sure that the
+        // 		 * page offset and size match too.
+        // 		 */
+        //         if !obj.is_null() {
+        //
+        //             let obj_st = &mut (*obj);
+        //             let b_1 = obj_st.userptr as u64 & (page_size as u64 - 1);
+        //
+        //             if b_1 != page_offset || (size > 0 && size != obj_st.userptr_size) {
+        //                 obj = std::ptr::null_mut();
+        //             }
+        //         }
+        // 	}
+        // }
+
+        //     let hsakmt_is_dgpu = true;
+        //
+        // // no_svm:
+        // 	if obj.is_null() && !hsakmt_is_dgpu {
+        //         panic!("TODO no_svm");
+        // 		/* On APUs try finding it in the CPUVM aperture */
+        // 		// if (aper)
+        // 		// 	pthread_mutex_unlock(&aper->fmm_mutex);
+        //         //
+        // 		// aper = &cpuvm_aperture;
+        //         //
+        // 		// pthread_mutex_lock(&aper->fmm_mutex);
+        // 		// if (range)
+        // 		// 	obj = vm_find_object_by_address_range(aper, addr);
+        // 		// else
+        // 		// 	obj = vm_find_object_by_address(aper, addr, 0);
+        // 	}
+
+        println!("here no error");
+
+        println!("ob is null {:?}", obj.is_null());
+        println!("aper is null {:?}", aper.is_null());
+
+        // if !obj.is_null() {
+        //     // println!("here");
+        // 	// *out_aper = aper;
+        // 	return obj;
+        // }
+
+        // println!("here");
+
+        std::ptr::null_mut()
+    }
+
     pub unsafe fn hsakmt_fmm_map_to_gpu(
-        &self,
-        _address: *mut std::os::raw::c_void,
-        _size: u64,
-        _gpuvm_address: *mut u64,
+        &mut self,
+        address: *mut std::os::raw::c_void,
+        size: u64,
+        gpuvm_address: *mut u64,
     ) -> HsakmtStatus {
-        // manageable_aperture_t *aperture = NULL;
-        // vm_object_t *object;
-        // uint32_t i;
-        // HSAKMT_STATUS ret = HSAKMT_STATUS_SUCCESS;
-        //
-        // /* Special handling for scratch memory */
-        // for (i = 0; i < gpu_mem_count; i++)
-        //     if (gpu_mem[i].gpu_id != NON_VALID_GPU_ID &&
-        //         address >= gpu_mem[i].scratch_physical.base &&
-        //         address <= gpu_mem[i].scratch_physical.limit)
-        //         return _fmm_map_to_gpu_scratch(gpu_mem[i].gpu_id,
-        //                         &gpu_mem[i].scratch_physical,
-        //                         address, size);
-        //
-        // object = vm_find_object(address, size, &aperture);
+        let mut aperture: *mut manageable_aperture_t = std::ptr::null_mut();
+
+        /* Special handling for scratch memory */
+        for i in 0..self.fmm.gpu_mem.len() {
+            if self.fmm.gpu_mem[i].gpu_id != NON_VALID_GPU_ID as u32
+                && address >= self.fmm.gpu_mem[i].scratch_physical.base
+                && address <= self.fmm.gpu_mem[i].scratch_physical.limit
+            {
+                panic!("TODO _fmm_map_to_gpu_scratch");
+                // return _fmm_map_to_gpu_scratch(gpu_mem[i].gpu_id,
+                //                                &gpu_mem[i].scratch_physical,
+                //                                address, size);
+                // return HSAKMT_STATUS_SUCCESS;
+            }
+        }
+
+        // panic!("TODO complete hsakmt_fmm_map_to_gpu");
+
+        let object = self.vm_find_object(address, size, &mut aperture);
+        println!("vm_find_object {}", object.is_null());
+        println!("aperture {}", aperture.is_null());
+
         // if (!object && !hsakmt_is_svm_api_supported) {
         //     if (!hsakmt_is_dgpu) {
         //         /* Prefetch memory on APUs with dummy-reads */
@@ -1412,13 +1807,13 @@ impl HsakmtGlobals {
         // println!("continue");
 
         /* Map for GPU access*/
-        // let ret = self.hsakmt_fmm_map_to_gpu(mem, page_size as u64, std::ptr::null_mut());
-        //
-        // if ret != HSAKMT_STATUS_SUCCESS {
-        //     println!("hsakmt_fmm_map_to_gpu error {:?}", ret);
-        //     self.__fmm_release(vm_obj, aperture);
-        //     return std::ptr::null_mut();
-        // }
+        let ret = self.hsakmt_fmm_map_to_gpu(mem, page_size as u64, std::ptr::null_mut());
+
+        if ret != HSAKMT_STATUS_SUCCESS {
+            println!("hsakmt_fmm_map_to_gpu error {:?}", ret);
+            self.__fmm_release(vm_obj, aperture);
+            return std::ptr::null_mut();
+        }
 
         mem
         // std::ptr::null_mut()

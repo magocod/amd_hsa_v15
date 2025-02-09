@@ -301,6 +301,7 @@ impl Clone for HsaKmtFmmGlobal<'_> {
 }
 
 // #[derive(Debug)]
+#[repr(C)]
 pub struct vm_object {
     pub start: *mut std::os::raw::c_void,
     pub userptr: *mut std::os::raw::c_void,

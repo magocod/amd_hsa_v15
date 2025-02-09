@@ -7,7 +7,7 @@
     clippy::mixed_case_hex_literals
 )]
 
-use crate::rbtree_amd::{rbtree_key_compare, rbtree_key_s, rbtree_key_t, LKP_ALL};
+use crate::rbtree_amd::{rbtree_key_compare, rbtree_key_s, rbtree_key_t, rbtree_max, LKP_ALL};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct rbtree_node_s {
@@ -102,8 +102,8 @@ unsafe fn hsakmt_rbtree_insert_value(
     // println!("sentinel_st: {:?}", sentinel_st);
 
     loop {
-        let temp_st = &mut *(temp);
-        let node_st = &mut *(node);
+        let temp_st = &mut (*temp);
+        let node_st = &mut (*node);
 
         let b = rbtree_key_compare(LKP_ALL() as u32, &node_st.key, &temp_st.key);
 
@@ -143,7 +143,7 @@ unsafe fn hsakmt_rbtree_insert_value(
 
     *p = node;
 
-    let node_st = &mut *(node);
+    let node_st = &mut (*node);
 
     node_st.parent = temp;
     node_st.left = sentinel;
@@ -154,10 +154,10 @@ unsafe fn hsakmt_rbtree_insert_value(
 
 pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_node_s) {
     /* a binary tree insert */
-    let root_st = &mut *(tree.root);
+    let root_st = &mut (*tree.root);
 
     let sentinel = &mut tree.sentinel as *mut rbtree_node_t;
-    let node_st = &mut *(node);
+    let node_st = &mut (*node);
 
     if root_st.key == tree.sentinel.key {
         node_st.parent = std::ptr::null_mut();
@@ -185,13 +185,13 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
 
     /* re-balance tree */
 
-    while node != root_st && rbt_is_red(&*(node_st.parent)) {
-        let node_parent = &mut *(node_st.parent);
-        let node_parent_parent = &mut *(node_parent.parent);
+    while node != root_st && rbt_is_red(&(*node_st.parent)) {
+        let node_parent = &mut (*node_st.parent);
+        let node_parent_parent = &mut (*node_parent.parent);
 
         if node_st.parent == node_parent_parent.left {
             // let temp = node_parent_parent.right;
-            let temp_st = &mut *(node_parent_parent.right);
+            let temp_st = &mut (*node_parent_parent.right);
 
             if rbt_is_red(temp_st) {
                 rbt_black(node_parent);
@@ -200,7 +200,7 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
 
                 node = node_parent_parent;
             } else {
-                if (node as *mut rbtree_node_t) == node_parent.right {
+                if node == node_parent.right {
                     node = node_parent;
 
                     rbtree_left_rotate(root, &tree.sentinel, node_st);
@@ -209,14 +209,14 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
                 rbt_black(node_parent);
                 rbt_red(node_parent_parent);
 
-                rbtree_right_rotate(root, &tree.sentinel, node_parent_parent);
+                // rbtree_right_rotate(root, &tree.sentinel, node_parent_parent);
             }
         } else {
-            let node_parent = &mut *(node_st.parent);
-            let node_parent_parent = &mut *(node_parent.parent);
+            let node_parent = &mut (*node_st.parent);
+            let node_parent_parent = &mut (*node_parent.parent);
 
             // let temp = node_parent_parent.left;
-            let temp_st = &mut *(node_parent_parent.left);
+            let temp_st = &mut (*node_parent_parent.left);
 
             if rbt_is_red(temp_st) {
                 rbt_black(node_parent);
@@ -228,13 +228,13 @@ pub unsafe fn hsakmt_rbtree_insert(tree: &mut rbtree_s, mut node: *mut rbtree_no
                 if node == node_parent.left {
                     node = node_parent;
 
-                    rbtree_right_rotate(root, &tree.sentinel, node_st);
+                    // rbtree_right_rotate(root, &tree.sentinel, node_st);
                 }
 
                 rbt_black(node_parent);
                 rbt_red(node_parent_parent);
 
-                rbtree_left_rotate(root, &tree.sentinel, node_parent_parent);
+                // rbtree_left_rotate(root, &tree.sentinel, node_parent_parent);
             }
         }
     }
@@ -432,30 +432,32 @@ pub unsafe fn rbtree_left_rotate(
     node: &mut rbtree_node_t,
 ) {
     let temp = node.right;
-    let temp_st = &mut *(node.right);
+    let temp_st = &mut (*node.right);
 
     node.right = temp_st.left;
 
     let temp_left = &mut (*temp_st.left);
 
-    if temp_left != sentinel {
-        temp_left.parent = node;
-    }
-
-    temp_st.parent = node.parent;
-
-    let node_parent = &mut (*node.parent);
-
-    if node == &(**root) {
-        *root = temp;
-    } else if node == &mut (*node_parent.left) {
-        node_parent.left = temp;
-    } else {
-        node_parent.right = temp;
-    }
-
-    temp_st.left = node;
-    node.parent = temp;
+    println!("temp {:?}", node);
+    println!("temp_left {}", temp_st.left.is_null())
+    // if temp_left != sentinel {
+    //     temp_left.parent = node;
+    // }
+    //
+    // temp_st.parent = node.parent;
+    //
+    // let node_parent = &mut (*node.parent);
+    //
+    // if node == &(**root) {
+    //     *root = temp;
+    // } else if node == &mut (*node_parent.left) {
+    //     node_parent.left = temp;
+    // } else {
+    //     node_parent.right = temp;
+    // }
+    //
+    // temp_st.left = node;
+    // node.parent = temp;
 }
 
 pub unsafe fn rbtree_right_rotate(
@@ -488,4 +490,75 @@ pub unsafe fn rbtree_right_rotate(
 
     temp_st.right = node;
     node.parent = temp;
+}
+
+pub unsafe fn hsakmt_rbtree_prev(
+    tree: &mut rbtree_t,
+    mut node: *mut rbtree_node_t,
+) -> *mut rbtree_node_t {
+    // rbtree_node_t  *root, *sentinel, *parent;
+
+    let sentinel = &mut tree.sentinel;
+    let node_st = &mut (*node);
+
+    if node_st.left != sentinel {
+        return rbtree_max(node_st.left, sentinel);
+    }
+
+    let root = tree.root;
+
+    loop {
+        let parent = node_st.parent;
+
+        if node == root {
+            return std::ptr::null_mut();
+        }
+
+        let parent_st = &mut (*parent);
+
+        if node == parent_st.right {
+            return parent;
+        }
+
+        node = parent
+    }
+}
+
+#[cfg(test)]
+mod tests_rbtree {
+    use super::*;
+
+    #[test]
+    fn test_insert() {
+        let mut tree = rbtree_s {
+            root: std::ptr::null_mut(),
+            sentinel: Default::default(),
+        };
+
+        rbtree_init(&mut tree);
+
+        let mut node_1 = rbtree_node_s::default();
+        node_1.key = rbtree_key_s {
+            addr: 1,
+            size: 4096,
+        };
+
+        let mut node_2 = rbtree_node_s::default();
+        node_1.key = rbtree_key_s {
+            addr: 2,
+            size: 4096,
+        };
+
+        let mut node_3 = rbtree_node_s::default();
+        node_1.key = rbtree_key_s {
+            addr: 3,
+            size: 4096,
+        };
+
+        unsafe {
+            hsakmt_rbtree_insert(&mut tree, &mut node_1);
+            hsakmt_rbtree_insert(&mut tree, &mut node_2);
+            hsakmt_rbtree_insert(&mut tree, &mut node_3);
+        }
+    }
 }

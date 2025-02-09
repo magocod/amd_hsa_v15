@@ -42,3 +42,7 @@ test
 ```bash
 cargo test -- --test-threads=1
 ```
+
+
+
+https://internals.rust-lang.org/t/get-the-offset-of-a-field-from-the-base-of-a-struct/14163
