@@ -7,7 +7,7 @@
     clippy::mixed_case_hex_literals
 )]
 
-use crate::rbtree::{rbtree_min, rbtree_node_t, rbtree_t};
+use crate::rbtree::{rbtree_node_t, rbtree_t};
 
 pub const LEFT: usize = 0;
 pub const RIGHT: usize = 1;
@@ -77,10 +77,30 @@ pub unsafe fn rbtree_max(
     mut node: *mut rbtree_node_t,
     sentinel: *mut rbtree_node_t,
 ) -> *mut rbtree_node_t {
-    let node_st = &mut (*node);
+    // let node_st = &mut (*node);
 
-    while node_st.right != sentinel {
+    // println!("node_st.right is_null {}", node_st.right.is_null());
+    while (*node).right != sentinel {
+        let node_st = &mut (*node);
+
+        // println!("node_st.right is_null {}", node_st.right.is_null());
+
         node = node_st.right;
+    }
+
+    node
+}
+
+pub unsafe fn rbtree_min(
+    mut node: *mut rbtree_node_t,
+    sentinel: *mut rbtree_node_t,
+) -> *mut rbtree_node_t {
+    // let node_st = &mut *(node);
+
+    while (*node).left != sentinel {
+        let node_st = &mut (*node);
+
+        node = node_st.left;
     }
 
     node
@@ -110,20 +130,31 @@ pub unsafe fn rbtree_lookup_nearest(
     lr: i32,
 ) -> *mut rbtree_node_t {
     let mut n: *mut rbtree_node_t = std::ptr::null_mut();
+    let mut node: *mut rbtree_node_t = std::ptr::null_mut();
 
-    let mut node = rbtree.root;
+    node = rbtree.root.clone();
     let sentinel = &mut rbtree.sentinel;
 
+    // let mut count = 0;
+
     while node != sentinel {
-        let node_st = &(*node);
-        let rc = rbtree_key_compare(type_v, key, &node_st.key);
+        // let node_st = &(*node);
+        let rc = rbtree_key_compare(type_v, key, &(*node).key);
+
+        // if count == 20 {
+        //     break;
+        // }
+
+        // count += 1;
 
         if rc < 0 {
             if lr == RIGHT as i32 {
                 n = node;
             }
 
+            let node_st = &mut (*node);
             node = node_st.left;
+            println!("node_st left ref {:#?}", node_st);
 
             continue;
         }
@@ -133,11 +164,16 @@ pub unsafe fn rbtree_lookup_nearest(
                 n = node;
             }
 
-            node = node_st.right;
+            let node_st = &mut (*node);
 
+            node = node_st.right;
+            println!("node_st right ref {:#?}", node_st.right);
+
+            break;
             continue;
         }
 
+        // println!("nearest node {:?}", node);
         return node;
     }
 

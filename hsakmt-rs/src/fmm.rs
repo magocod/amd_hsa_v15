@@ -23,8 +23,8 @@ use crate::kfd_ioctl::{
 };
 use crate::libhsakmt::hsakmt_ioctl;
 use crate::rbtree::{
-    hsakmt_rbtree_delete, hsakmt_rbtree_insert, hsakmt_rbtree_prev, rbtree_init, rbtree_node_t,
-    rbtree_t,
+    hsakmt_rbtree_delete, hsakmt_rbtree_insert, hsakmt_rbtree_prev, print_tree, rbtree_init,
+    rbtree_node_t, rbtree_t,
 };
 use crate::rbtree_amd::{rbtree_key, rbtree_lookup_nearest, rbtree_min_max, LEFT, LKP_ALL, RIGHT};
 use libc::{
@@ -387,6 +387,8 @@ pub unsafe fn aperture_allocate_object(
     //     return std::ptr::null_mut();
     // }
 
+    println!("new_object.node {:#?}", new_object.node);
+
     hsakmt_rbtree_insert(&mut app.tree, &mut new_object.node);
 
     &mut new_object as *mut vm_object_t
@@ -510,7 +512,7 @@ pub unsafe fn vm_find_object_by_address_userptr_range(
 
     let mut rn = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, RIGHT as i32);
 
-    let mut ln: *mut rbtree_node_t;
+    let mut ln: *mut rbtree_node_t = std::ptr::null_mut();
     let mut start: *mut std::os::raw::c_void;
     let mut size: u64;
 
@@ -583,18 +585,20 @@ pub unsafe fn vm_find_object_by_address_range(
 }
 
 pub unsafe fn vm_find_object_by_address_userptr(
-    app: &mut manageable_aperture_t,
+    app: *mut manageable_aperture_t,
     address: *mut std::os::raw::c_void,
     size: u64,
     is_userptr: i32,
 ) -> *mut vm_object_t {
     let mut cur: *mut vm_object_t = std::ptr::null_mut();
 
+    let aperture = &mut (*app);
+
     // let tree = vm_object_tree(app, is_userptr);
     let tree = if is_userptr > 0 {
-        &mut app.user_tree
+        &mut aperture.user_tree
     } else {
-        &mut app.tree
+        &mut aperture.tree
     };
 
     let key = rbtree_key(address as u64, size as i64);
@@ -602,42 +606,47 @@ pub unsafe fn vm_find_object_by_address_userptr(
     let mut start: *mut std::os::raw::c_void;
     let mut s: u64 = 0;
 
+    // println!("vm_find_object_by_address_userptr address is null {}", address.is_null());
+
     /* rbtree_lookup_nearest(,,,RIGHT) will return a node with
      * its size >= key.size and its address >= key.address
      * if there are two nodes with format(address, size),
      * (0x100, 16) and (0x110, 8). the key is (0x100, 0),
      * then node (0x100, 16) will be returned.
      */
-    let n = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, RIGHT as i32);
 
-    if !n.is_null() {
-        cur = vm_object_entry(n, is_userptr);
-        let cur_st = &mut (*cur);
+    print_tree(tree);
 
-        if is_userptr == 0 {
-            start = cur_st.start;
-            s = cur_st.size;
-        } else {
-            start = cur_st.userptr;
-            s = cur_st.userptr_size;
-        }
+    // let n = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, RIGHT as i32);
 
-        if start != address {
-            return std::ptr::null_mut();
-        }
-
-        if size > 0 {
-            return if size == s { cur } else { std::ptr::null_mut() };
-        }
-
-        /* size is 0, make sure there is only one node whose address == key.address*/
-        let key = rbtree_key(address as u64, -1);
-        let rn = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, LEFT as i32);
-
-        if rn != n {
-            return std::ptr::null_mut();
-        }
-    }
+    // if !n.is_null() {
+    //     cur = vm_object_entry(n, is_userptr);
+    //     let cur_st = &mut (*cur);
+    //
+    //     if is_userptr == 0 {
+    //         start = cur_st.start;
+    //         s = cur_st.size;
+    //     } else {
+    //         start = cur_st.userptr;
+    //         s = cur_st.userptr_size;
+    //     }
+    //
+    //     if start != address {
+    //         return std::ptr::null_mut();
+    //     }
+    //
+    //     if size > 0 {
+    //         return if size == s { cur } else { std::ptr::null_mut() };
+    //     }
+    //
+    //     /* size is 0, make sure there is only one node whose address == key.address*/
+    //     let key = rbtree_key(address as u64, -1);
+    //     let rn = rbtree_lookup_nearest(tree, &key, LKP_ALL() as u32, LEFT as i32);
+    //
+    //     if rn != n {
+    //         return std::ptr::null_mut();
+    //     }
+    // }
 
     cur /* NULL if not found */
 }
@@ -651,7 +660,7 @@ pub unsafe fn vm_find_object_by_userptr(
 }
 
 pub unsafe fn vm_find_object_by_address(
-    app: &mut manageable_aperture_t,
+    app: *mut manageable_aperture_t,
     address: *mut std::os::raw::c_void,
     size: u64,
 ) -> *mut vm_object_t {
@@ -1316,7 +1325,7 @@ impl HsakmtGlobals {
 
         let mflags = fmm_translate_ioc_to_hsa_flags(ioc_flags);
 
-        // println!("{:#?}", args);
+        // println!("hsakmt_ioctl args {:#?}", args);
         // println!(
         //     "mmap_offset {}, args.mmap_offset {}",
         //     mmap_offset, args.mmap_offset
@@ -1512,7 +1521,7 @@ impl HsakmtGlobals {
         &mut self,
         addr: *mut std::os::raw::c_void,
         size: u64,
-        out_aper: *mut *mut manageable_aperture_t,
+        out_aper: *mut *mut manageable_aperture_t<'static>,
     ) -> *mut vm_object_t {
         let mut aper: *mut manageable_aperture_t = std::ptr::null_mut();
 
@@ -1559,60 +1568,62 @@ impl HsakmtGlobals {
             }
         }
 
-        // println!("aperture_error is null {}", aper.is_null());
+        println!("aperture_error is null {}", aper.is_null());
 
-        // let mmap_aperture_ops = manageable_aperture_ops_t {
-        //     allocate_area_aligned: Some(mmap_aperture_allocate_aligned),
-        //     release_area: Some(mmap_aperture_release)
-        // };
-        //
-        // let page_size = self.PAGE_SIZE();
-        //
-        // // pthread_mutex_lock(&aper->fmm_mutex);
-        // if range {
-        //     let aper_st = &mut (*aper);
-        // 	/* mmap_apertures can have userptrs in them. Try to
-        // 	 * look up addresses as userptrs first to sort out any
-        // 	 * ambiguity of multiple overlapping mappings at
-        // 	 * different GPU addresses.
-        // 	 */
-        // 	if userptr || aper_st.ops == mmap_aperture_ops {
-        //         obj = vm_find_object_by_userptr_range(aper_st, addr);
-        //     }
-        //
-        // 	if obj.is_null() && !userptr {
-        //         obj = vm_find_object_by_address_range(aper_st, addr);
-        //     }
-        // } else {
-        //     let aper_st = &mut (*aper);
-        //
-        //     if userptr || aper_st.ops == mmap_aperture_ops {
-        //         obj = vm_find_object_by_userptr(aper_st, addr, size);
-        //     }
-        //
-        //     if obj.is_null() && !userptr {
-        //         // println!("aperture_error is null {}", aper.is_null());
-        //
-        //         let page_offset = (addr as u64) & (page_size as u64 - 1) ;
-        //
-        // 		let page_addr: *mut std::os::raw::c_void = ((addr as u8) as u64 - page_offset) as *mut std::os::raw::c_void;
-        //
-        // 		obj = vm_find_object_by_address(aper_st, page_addr, 0);
-        // 		/* If we find a userptr here, it's a match on
-        // 		 * the aligned GPU address. Make sure that the
-        // 		 * page offset and size match too.
-        // 		 */
-        //         if !obj.is_null() {
-        //
-        //             let obj_st = &mut (*obj);
-        //             let b_1 = obj_st.userptr as u64 & (page_size as u64 - 1);
-        //
-        //             if b_1 != page_offset || (size > 0 && size != obj_st.userptr_size) {
-        //                 obj = std::ptr::null_mut();
-        //             }
-        //         }
-        // 	}
-        // }
+        let mmap_aperture_ops = manageable_aperture_ops_t {
+            allocate_area_aligned: Some(mmap_aperture_allocate_aligned),
+            release_area: Some(mmap_aperture_release),
+        };
+
+        let page_size = self.PAGE_SIZE();
+
+        // pthread_mutex_lock(&aper->fmm_mutex);
+        if range {
+            let aper_st = &mut (*aper);
+            /* mmap_apertures can have userptrs in them. Try to
+             * look up addresses as userptrs first to sort out any
+             * ambiguity of multiple overlapping mappings at
+             * different GPU addresses.
+             */
+            if userptr || aper_st.ops == mmap_aperture_ops {
+                // obj = vm_find_object_by_userptr_range(aper_st, addr);
+            }
+
+            if obj.is_null() && !userptr {
+                // obj = vm_find_object_by_address_range(aper_st, addr);
+            }
+        } else {
+            let aper_st = &mut (*aper);
+
+            if userptr || aper_st.ops == mmap_aperture_ops {
+                // obj = vm_find_object_by_userptr(aper_st, addr, size);
+            }
+
+            if obj.is_null() && !userptr {
+                // println!("aperture_error is null {}", aper.is_null());
+
+                let page_offset = (addr as u64) & (page_size as u64 - 1);
+
+                let page_addr =
+                    (addr as *mut u8).sub(page_offset as usize) as *mut std::os::raw::c_void;
+                // println!("vm_find_object addr is null {}", addr.is_null());
+                // println!("page_addr is null {}", page_addr.is_null());
+
+                obj = vm_find_object_by_address(aper, page_addr, 0);
+                /* If we find a userptr here, it's a match on
+                 * the aligned GPU address. Make sure that the
+                 * page offset and size match too.
+                 */
+                if !obj.is_null() {
+                    let obj_st = &mut (*obj);
+                    let b_1 = obj_st.userptr as u64 & (page_size as u64 - 1);
+
+                    if b_1 != page_offset || (size > 0 && size != obj_st.userptr_size) {
+                        obj = std::ptr::null_mut();
+                    }
+                }
+            }
+        }
 
         //     let hsakmt_is_dgpu = true;
         //
@@ -1637,11 +1648,11 @@ impl HsakmtGlobals {
         println!("ob is null {:?}", obj.is_null());
         println!("aper is null {:?}", aper.is_null());
 
-        // if !obj.is_null() {
-        //     // println!("here");
-        // 	// *out_aper = aper;
-        // 	return obj;
-        // }
+        if !obj.is_null() {
+            // println!("here");
+            *out_aper = aper;
+            return obj;
+        }
 
         // println!("here");
 
@@ -1672,9 +1683,10 @@ impl HsakmtGlobals {
 
         // panic!("TODO complete hsakmt_fmm_map_to_gpu");
 
+        println!("address is null {}", address.is_null());
         let object = self.vm_find_object(address, size, &mut aperture);
-        println!("vm_find_object {}", object.is_null());
-        println!("aperture {}", aperture.is_null());
+        println!("vm_find_object is_null {}", object.is_null());
+        println!("aperture is_null {}", aperture.is_null());
 
         // if (!object && !hsakmt_is_svm_api_supported) {
         //     if (!hsakmt_is_dgpu) {
